@@ -60,13 +60,16 @@ function calcTax(grossFortnight, profile){
   const pkg=parseFloat(profile.pkgAmt)||0;
   const sacPct=(parseFloat(profile.sacPct)||0)/100;
   const sac=grossFortnight*sacPct;
+  // PBI salary packaging is a POST-TAX benefit — does NOT reduce taxable income
+  // Only salary sacrifice to super reduces the tax base
+  // Tax base = gross minus packaging AND sacrifice
   const taxable=Math.max(0,grossFortnight-pkg-sac);
-  // Income tax: floor(taxable/2) then applyScale adds 0.99
+  // Income tax on taxable (gross minus sacrifice only)
   const weeklyTaxable=Math.floor(taxable/2);
   const scale=profile.tfThreshold?SCALE2:SCALE1;
   const weeklyTax=applyScale(scale,weeklyTaxable);
   const fortnightlyTax=weeklyTax*2;
-  // HELP: floor(gross/2) then applyScale adds 0.99
+  // HELP base = gross (sacrifice added back = gross, packaging never reduced it)
   let helpFortnight=0;
   if(profile.helpDebt){
     const weeklyHelpBase=Math.floor(grossFortnight/2);
@@ -74,6 +77,7 @@ function calcTax(grossFortnight, profile){
     const weeklyHelp=applyScale(helpScale,weeklyHelpBase);
     helpFortnight=weeklyHelp*2;
   }
+  // Take-home: gross minus tax, HELP, sacrifice, and packaging (post-tax)
   const takeHome=Math.max(0,grossFortnight-fortnightlyTax-helpFortnight-sac-pkg);
   return{tax:fortnightlyTax,help:helpFortnight,sac,pkg,taxable,takeHome};
 }
