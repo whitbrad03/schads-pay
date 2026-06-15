@@ -41,37 +41,41 @@ const SCALE2=[{max:361,a:0,b:0},{max:500,a:0.1600,b:57.8462},{max:625,a:0.2600,b
 const HELP_TFT=[{max:1288,a:0,b:0},{max:2403,a:0.15,b:193.2692},{max:3447,a:0.17,b:241.3462},{max:Infinity,a:0.10,b:0}];
 const HELP_NOTFT=[{max:938,a:0,b:0},{max:2053,a:0.15,b:140.7692},{max:2597,a:0.17,b:181.8462},{max:Infinity,a:0.10,b:0}];
 
-function applyScale(scale, weeklyX){
-  const x=Math.floor(weeklyX)+0.99;
-  for(const r of scale){if(x<r.max)return Math.max(0,Math.floor(r.a*x-r.b));}
-  return 0;
+// ATO formula: x = floor(weekly earnings) + 0.99, then y = ax - b
+// applyScale receives RAW weekly earnings (no 0.99 added yet)
+function applyScale(scale, rawWeekly){
+  const x=Math.floor(rawWeekly)+0.99;
+  for(const r of scale){if(x<=r.max)return Math.max(0,Math.round(r.a*x-r.b));}
+  const last=scale[scale.length-1];
+  return Math.max(0,Math.round(last.a*x-last.b));
 }
 
-// Calculate fortnightly tax + HELP withholding
-// taxableFortnightly = gross - packaging - sacrifice
-// helpFortnightly = gross + sacrifice (packaging also added back per ATO)
+// Fortnightly tax + HELP (ATO NAT 1004 + Schedule 8, 2025-26)
+// Schedule 8 fortnightly method:
+//   weekly equivalent = floor(fortnightly / 2)  [ignore cents per ATO instruction]
+//   weekly STSL = applyScale(helpScale, weeklyEquiv)
+//   fortnightly STSL = weeklySTSL x 2
+// HELP income base = gross (salary sacrifice + packaging both added back per ATO)
 function calcTax(grossFortnight, profile){
   const pkg=parseFloat(profile.pkgAmt)||0;
   const sacPct=(parseFloat(profile.sacPct)||0)/100;
   const sac=grossFortnight*sacPct;
-  const taxable=Math.max(0, grossFortnight-pkg-sac);
-  // Weekly equivalent for ATO formula
-  const weeklyTaxable=Math.floor(taxable/2)+0.99;
+  const taxable=Math.max(0,grossFortnight-pkg-sac);
+  // Income tax: floor(taxable/2) then applyScale adds 0.99
+  const weeklyTaxable=Math.floor(taxable/2);
   const scale=profile.tfThreshold?SCALE2:SCALE1;
   const weeklyTax=applyScale(scale,weeklyTaxable);
   const fortnightlyTax=weeklyTax*2;
-  // HELP: calculated on gross + sacrifice (packaging added back too)
+  // HELP: floor(gross/2) then applyScale adds 0.99
   let helpFortnight=0;
   if(profile.helpDebt){
-    const helpIncome=grossFortnight; // both pkg and sac added back = gross
-    const weeklyHelp=Math.floor(helpIncome/2)+0.99;
+    const weeklyHelpBase=Math.floor(grossFortnight/2);
     const helpScale=profile.tfThreshold?HELP_TFT:HELP_NOTFT;
-    const weeklyHelpAmt=applyScale(helpScale,weeklyHelp);
-    helpFortnight=weeklyHelpAmt*2;
+    const weeklyHelp=applyScale(helpScale,weeklyHelpBase);
+    helpFortnight=weeklyHelp*2;
   }
-  const takeHome=grossFortnight-fortnightlyTax-helpFortnight-sac-pkg;
-  const employerSuper=(grossFortnight*(1-(sacPct)))*0; // placeholder, super calc in aggregate
-  return{tax:fortnightlyTax,help:helpFortnight,sac,pkg,taxable,takeHome:Math.max(0,takeHome)};
+  const takeHome=Math.max(0,grossFortnight-fortnightlyTax-helpFortnight-sac-pkg);
+  return{tax:fortnightlyTax,help:helpFortnight,sac,pkg,taxable,takeHome};
 }
 
 // ─── PAY MATHS ───────────────────────────────────────────────────────────────
